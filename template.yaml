@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  EncryptedDataTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: EncryptedData
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+  MyKmsKey:
+    Type: AWS::KMS::Key
+    Properties:
+      Description: "KMS key for encrypting sensitive fields in DynamoDB"
+      EnableKeyRotation: true
+
+  EncryptDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.lambdaHandler
+      Runtime: nodejs20.x
+      CodeUri: ./hello-world
+      Timeout: 10
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - KMSDecryptPolicy:
+            KeyId: !Ref MyKmsKey
+        - Statement:
+            - Effect: Allow
+              Action:
+                - kms:Encrypt
+              Resource: !GetAtt MyKmsKey.Arn
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EncryptedDataTable
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EncryptedDataTable
+          KMS_KEY_ID: !Ref MyKmsKey
+      Events:
+        ApiGateway:
+          Type: Api
+          Properties:
+            Path: /store-data
+            Method: POST
+    Metadata: # Manage esbuild properties
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+        - app.ts
+
+  DecryptDataFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.decryptHandler
+      Runtime: nodejs20.x
+      CodeUri: ./hello-world
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - KMSDecryptPolicy:
+            KeyId: !Ref MyKmsKey
+        - Statement:
+            - Effect: Allow
+              Action:
+                - kms:Encrypt
+              Resource: !GetAtt MyKmsKey.Arn
+        - DynamoDBCrudPolicy:
+            TableName: !Ref EncryptedDataTable
+      Environment:
+        Variables:
+          TABLE_NAME: !Ref EncryptedDataTable
+          KMS_KEY_ID: !Ref MyKmsKey
+      Events:
+        ApiGateway:
+          Type: Api
+          Properties:
+            Path: /fetch-data
+            Method: GET
+    Metadata: # Manage esbuild properties
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+        - app.ts
